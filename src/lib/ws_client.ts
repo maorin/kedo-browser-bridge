@@ -34,7 +34,7 @@ export class WSClient {
         type: 'hello',
         client: 'kedo-browser-bridge',
         client_version: this.clientVersion,
-        protocol_versions: ['1.0'],
+        protocol_versions: ['1.0', '1.1'],
         role_hint: 'user',
         token: this.token,
       });

@@ -1,7 +1,7 @@
 # kedo Browser Bridge — Protocol
 
-**Protocol version:** `1.0`
-**Status:** Draft, M1 in development.
+**Protocol versions:** `1.0`, `1.1` (latest)
+**Status:** Draft. M1 (1.0) shipped. M2 (1.1, read-only browser control) in development.
 
 This document is the contract between the kedo backend and any Browser Bridge client (Chrome MV3 extension by default; the same protocol can be implemented by other clients later).
 
@@ -13,11 +13,14 @@ This document is the contract between the kedo backend and any Browser Bridge cl
 
 ## 2. Compatibility matrix
 
-| Backend protocol | Plugin client supported |
-|---|---|
-| 1.0 | 1.0 |
+| Backend supports | Plugin supports | Negotiated | Available actions |
+|---|---|---|---|
+| 1.0, 1.1 | 1.0 | 1.0 | user_inject only |
+| 1.0, 1.1 | 1.0, 1.1 | 1.1 | user_inject + read-only commands (list_tabs, navigate, screenshot, extract, query, wait_for) |
 
-Breaking changes bump the major (1.x → 2.0). Negotiation happens at handshake; if no overlap, the backend closes with code 4002 and the plugin shows a banner asking to update.
+Negotiation: each side advertises a set of supported versions; the highest common version wins. If no overlap, the backend closes with code 4002 (`version_mismatch`) and the plugin shows a banner asking to update.
+
+Breaking changes bump the major (1.x → 2.0). Additive new actions / fields are minor (1.x → 1.x+1).
 
 ## 3. Session roles
 
@@ -97,38 +100,78 @@ Plugin pushes the active page's content to the backend's Context Inbox. Not an R
 
 The backend stores the screenshot under `~/.kedo/cache/screenshots/<inbox_item_id>.png` and rewrites the path before persisting the inbox row.
 
-### 4.4 Command / result (M2+, reserved in 1.0)
+### 4.4 Command / result (1.1)
 
-Server-to-client RPC. The plugin echoes back a `result` keyed by `id`.
+Server-to-client RPC. The plugin echoes back a `result` keyed by `id`. Read-only and navigation actions are normative as of 1.1; click / type / submit / permission_response will be added in 1.2 with M3.
 
 ```jsonc
 // server → client
-{
-  "type": "command",
-  "id": "<uuid>",
-  "action": "navigate" | "list_tabs" | "query" | "extract" | "screenshot"
-          | "click" | "type" | "wait_for",
-  "params": { /* action-specific */ }
-}
+{ "type": "command", "id": "<uuid>", "action": "<action>", "params": { ... } }
 
-// client → server
-{
-  "type": "result",
-  "id": "<uuid>",
-  "success": true,
-  "data": { /* action-specific */ }
-}
+// client → server (success)
+{ "type": "result", "id": "<uuid>", "success": true, "data": { ... } }
 
-// or
-{
-  "type": "result",
-  "id": "<uuid>",
-  "success": false,
-  "error": { "code": "ELEMENT_NOT_FOUND", "message": "..." }
-}
+// client → server (failure)
+{ "type": "result", "id": "<uuid>", "success": false,
+  "error": { "code": "ELEMENT_NOT_FOUND", "message": "..." } }
 ```
 
-Command actions and parameter schemas are not normative in 1.0 — they will be specified in 1.1 alongside M2.
+#### 4.4.1 Action: `list_tabs`
+
+No parameters. Returns:
+
+```json
+{ "tabs": [
+    { "id": 12, "window_id": 1, "url": "https://...", "title": "...",
+      "active": true, "status": "complete" }
+  ] }
+```
+
+#### 4.4.2 Action: `navigate`
+
+Params:
+
+| field | type | required | default |
+|---|---|---|---|
+| `url` | string | yes | — |
+| `tab_id` | int | no | active tab |
+| `new_tab` | bool | no | false |
+| `timeout_ms` | int | no | 30000 |
+
+Returns `{ tab_id, url, title, status }`. Errors with `PROTOCOL_BLOCKED` for non-http(s) schemes, `NAVIGATION_TIMEOUT` if page does not reach `complete` within timeout.
+
+#### 4.4.3 Action: `screenshot`
+
+Params: `tab_id` (optional). Returns `{ data_url, tab_id }`. `data_url` is `data:image/png;base64,...`.
+
+#### 4.4.4 Action: `extract`
+
+Params: `tab_id` (optional). Returns `{ url, title, text_content, excerpt, length, selection }`. Uses Mozilla Readability on a DOM clone.
+
+#### 4.4.5 Action: `query`
+
+Params (at least one of selector/text_match/aria_label is required):
+
+| field | type | required |
+|---|---|---|
+| `selector` | string (CSS) | one of three |
+| `text_match` | string (substring) | one of three |
+| `aria_label` | string (exact) | one of three |
+| `tab_id` | int | no |
+| `limit` | int (default 20) | no |
+
+Returns `{ total, matches: [{ matched_strategy, tag, role, aria_label, text, href, visible, is_password_field, rect: {x,y,w,h} }] }`. `is_password_field` is true for `<input type=password>` or `autocomplete~="cc-"`; clients must refuse to interact with these in 1.2+.
+
+#### 4.4.6 Action: `wait_for`
+
+Params: same triple as `query`, plus:
+
+| field | type | default |
+|---|---|---|
+| `vanish` | bool | false |
+| `timeout_ms` | int (max 60000) | 30000 |
+
+Returns `{ found, elapsed_ms, count }` on success, or `{ error: "WAIT_TIMEOUT" }` on timeout.
 
 ### 4.5 Permission request (M3+, reserved)
 

@@ -1,9 +1,10 @@
 import { WSClient } from './lib/ws_client';
+import { listTabs, navigate, screenshot, extract, query, waitFor } from './lib/actions';
 
 const DEFAULT_WS_URL = 'ws://localhost:8000/api/ws/browser';
 const HEARTBEAT_PERIOD_MIN = 0.4; // ~24 s; keeps the SW alive
 const ALARM_NAME = 'kedo-heartbeat';
-const CLIENT_VERSION = '0.1.0';
+const CLIENT_VERSION = '0.2.0';
 
 let client: WSClient | null = null;
 let connected = false;
@@ -22,12 +23,15 @@ async function ensureClient(): Promise<void> {
       connected = c;
     });
     client.onMessage((msg) => {
-      // M1: only hello_ack and ack are meaningful. Everything else is logged.
+      if (msg.type === 'command') {
+        void handleCommand(msg);
+        return;
+      }
       if (msg.type === 'hello_nack') {
         console.warn('[kedo] hello_nack', msg.reason);
-      } else {
-        console.log('[kedo] ws', msg.type, msg);
+        return;
       }
+      console.log('[kedo] ws', msg.type, msg);
     });
   }
   client.connect();
@@ -91,6 +95,37 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   })();
   return true; // keep the channel open for async sendResponse
 });
+
+async function handleCommand(msg: { id: string; action: string; params?: any }): Promise<void> {
+  if (!client) return;
+  const { id, action, params } = msg;
+  try {
+    let data: any;
+    switch (action) {
+      case 'list_tabs':  data = await listTabs(); break;
+      case 'navigate':   data = await navigate(params || {}); break;
+      case 'screenshot': data = await screenshot(params || {}); break;
+      case 'extract':    data = await extract(params || {}); break;
+      case 'query':      data = await query(params || {}); break;
+      case 'wait_for':   data = await waitFor(params || {}); break;
+      default:
+        client.send({
+          type: 'result',
+          id,
+          success: false,
+          error: { code: 'UNKNOWN_ACTION', message: action },
+        });
+        return;
+    }
+    client.send({ type: 'result', id, success: true, data });
+  } catch (err: any) {
+    const error =
+      err && typeof err === 'object' && 'code' in err
+        ? { code: err.code, message: err.message }
+        : { code: 'INTERNAL', message: String(err?.message || err) };
+    client.send({ type: 'result', id, success: false, error });
+  }
+}
 
 type CollectOk = { payload: Record<string, unknown> };
 type CollectErr = { error: string };
