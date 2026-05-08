@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "kedo Browser Bridge",
-  "version": "0.1.0",
-  "description": "Send pages to kedo and (later) let kedo agents drive your browser.",
+  "version": "0.2.0",
+  "description": "Send pages to kedo and let kedo agents drive your browser (M2: read-only).",
   "permissions": ["tabs", "activeTab", "scripting", "storage", "alarms"],
   "host_permissions": ["<all_urls>"],
   "background": {
