@@ -8,7 +8,7 @@ See `PROTOCOL.md` for the wire format and `../kedo/docs/deep-dives/browser-bridg
 
 ## What M1 does
 
-- Connects to a kedo backend at `ws://localhost:8765/ws/browser` (configurable).
+- Connects to a kedo backend at `ws://localhost:8000/api/ws/browser` (configurable).
 - Adds a popup with a **Send to kedo** button: extracts the active page's main content (Mozilla Readability) + screenshot + optional user note, posts it to the kedo backend, where it lands in the *Context Inbox*.
 - Does **not** create a kedo task automatically — the user picks inbox items in the kedo dashboard and starts a task from there.
 
@@ -22,8 +22,8 @@ pnpm dev          # vite watch, outputs to dist/
 Then in Chrome: `chrome://extensions/` → Developer mode → **Load unpacked** → select `dist/`.
 
 On first popup open, paste:
-- the kedo backend URL (default `ws://localhost:8765/ws/browser`)
-- the token printed by kedo on startup (also stored at `~/.config/kedo/browser_token`)
+- the kedo backend URL (default `ws://localhost:8000/api/ws/browser`)
+- the token from `~/.config/kedo/browser_token` (kedo generates it on first server startup)
 
 ## Roadmap
 

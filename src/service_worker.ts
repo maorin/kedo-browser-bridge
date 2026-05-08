@@ -1,6 +1,6 @@
 import { WSClient } from './lib/ws_client';
 
-const DEFAULT_WS_URL = 'ws://localhost:8765/ws/browser';
+const DEFAULT_WS_URL = 'ws://localhost:8000/api/ws/browser';
 const HEARTBEAT_PERIOD_MIN = 0.4; // ~24 s; keeps the SW alive
 const ALARM_NAME = 'kedo-heartbeat';
 const CLIENT_VERSION = '0.1.0';

@@ -8,7 +8,7 @@ This document is the contract between the kedo backend and any Browser Bridge cl
 ## 1. Transport
 
 - WebSocket, JSON frames (UTF-8 text).
-- Default endpoint: `ws://localhost:8765/ws/browser`.
+- Default endpoint: `ws://localhost:8000/api/ws/browser` (kedo's FastAPI router is mounted under `/api`).
 - Token rejection closes the socket with code 4001 immediately after `hello`.
 
 ## 2. Compatibility matrix
