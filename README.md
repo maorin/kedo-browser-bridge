@@ -1,6 +1,6 @@
 # kedo-browser-bridge
 
-Chrome (Manifest V3) extension that bridges the user's browser with a [kedo](https://github.com/supermaojj/kedo) backend over WebSocket.
+Chrome (Manifest V3) extension that bridges the user's browser with a [kedo](https://github.com/maorin/kedo) backend over WebSocket.
 
 **Status:** M1 (channel + context inbox). The plugin only sends pages to kedo — agent control of the browser comes in M2/M3.
 
