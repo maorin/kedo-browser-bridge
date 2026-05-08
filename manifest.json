@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "kedo Browser Bridge",
+  "version": "0.1.0",
+  "description": "Send pages to kedo and (later) let kedo agents drive your browser.",
+  "permissions": ["tabs", "activeTab", "scripting", "storage", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/service_worker.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content_script.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Send to kedo"
+  }
+}
