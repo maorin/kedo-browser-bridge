@@ -30,6 +30,17 @@ async function resolveTab(tab_id?: number): Promise<Tab> {
   return t;
 }
 
+export async function getActiveTab(params: { tab_id?: number }): Promise<any> {
+  const tab = await resolveTab(params?.tab_id);
+  return {
+    tab_id: tab.id,
+    window_id: tab.windowId,
+    url: tab.url,
+    title: tab.title,
+    status: tab.status,
+  };
+}
+
 export async function listTabs(): Promise<{ tabs: any[] }> {
   const tabs = await chrome.tabs.query({});
   return {
@@ -143,4 +154,54 @@ export async function waitFor(params: {
     type: 'wait_for',
     params: { ...params, timeout_ms: timeout },
   });
+}
+
+// ---------- M3 write actions (delegate to content script) ----------
+
+export async function click(params: {
+  tab_id?: number;
+  selector?: string;
+  text_match?: string;
+  aria_label?: string;
+}): Promise<any> {
+  if (!params?.selector && !params?.text_match && !params?.aria_label) {
+    throw aerr('BAD_PARAMS', 'at least one of selector/text_match/aria_label required');
+  }
+  return viaContentScript(params.tab_id, { type: 'click', params });
+}
+
+export async function typeText(params: {
+  tab_id?: number;
+  selector?: string;
+  aria_label?: string;
+  value: string;
+  clear_first?: boolean;
+  press_enter?: boolean;
+}): Promise<any> {
+  if (params?.value === undefined || params.value === null) {
+    throw aerr('BAD_PARAMS', 'value required');
+  }
+  if (!params.selector && !params.aria_label) {
+    throw aerr('BAD_PARAMS', 'selector or aria_label required');
+  }
+  return viaContentScript(params.tab_id, { type: 'type', params });
+}
+
+export async function submit(params: {
+  tab_id?: number;
+  selector?: string;
+}): Promise<any> {
+  return viaContentScript(params?.tab_id, { type: 'submit', params: params || {} });
+}
+
+export async function scroll(params: {
+  tab_id?: number;
+  direction?: 'up' | 'down' | 'top' | 'bottom';
+  selector?: string;
+  amount?: number;
+}): Promise<any> {
+  if (!params?.direction && !params?.selector) {
+    throw aerr('BAD_PARAMS', 'direction or selector required');
+  }
+  return viaContentScript(params.tab_id, { type: 'scroll', params });
 }

@@ -1,10 +1,13 @@
 import { WSClient } from './lib/ws_client';
-import { listTabs, navigate, screenshot, extract, query, waitFor } from './lib/actions';
+import {
+  click, extract, getActiveTab, listTabs, navigate,
+  query, screenshot, scroll, submit, typeText, waitFor,
+} from './lib/actions';
 
 const DEFAULT_WS_URL = 'ws://localhost:8000/api/ws/browser';
 const HEARTBEAT_PERIOD_MIN = 0.4; // ~24 s; keeps the SW alive
 const ALARM_NAME = 'kedo-heartbeat';
-const CLIENT_VERSION = '0.2.0';
+const CLIENT_VERSION = '0.3.0';
 
 let client: WSClient | null = null;
 let connected = false;
@@ -102,12 +105,17 @@ async function handleCommand(msg: { id: string; action: string; params?: any }):
   try {
     let data: any;
     switch (action) {
-      case 'list_tabs':  data = await listTabs(); break;
-      case 'navigate':   data = await navigate(params || {}); break;
-      case 'screenshot': data = await screenshot(params || {}); break;
-      case 'extract':    data = await extract(params || {}); break;
-      case 'query':      data = await query(params || {}); break;
-      case 'wait_for':   data = await waitFor(params || {}); break;
+      case 'list_tabs':      data = await listTabs(); break;
+      case 'get_active_tab': data = await getActiveTab(params || {}); break;
+      case 'navigate':       data = await navigate(params || {}); break;
+      case 'screenshot':     data = await screenshot(params || {}); break;
+      case 'extract':        data = await extract(params || {}); break;
+      case 'query':          data = await query(params || {}); break;
+      case 'wait_for':       data = await waitFor(params || {}); break;
+      case 'click':          data = await click(params || {}); break;
+      case 'type':           data = await typeText(params || {}); break;
+      case 'submit':         data = await submit(params || {}); break;
+      case 'scroll':         data = await scroll(params || {}); break;
       default:
         client.send({
           type: 'result',

@@ -1,7 +1,7 @@
 # kedo Browser Bridge — Protocol
 
-**Protocol versions:** `1.0`, `1.1` (latest)
-**Status:** Draft. M1 (1.0) shipped. M2 (1.1, read-only browser control) in development.
+**Protocol versions:** `1.0`, `1.1`, `1.2` (latest)
+**Status:** Draft. M1 (1.0) shipped. M2 (1.1, read-only browser control) shipped. M3 (1.2, write + permission gating) shipped.
 
 This document is the contract between the kedo backend and any Browser Bridge client (Chrome MV3 extension by default; the same protocol can be implemented by other clients later).
 
@@ -15,8 +15,9 @@ This document is the contract between the kedo backend and any Browser Bridge cl
 
 | Backend supports | Plugin supports | Negotiated | Available actions |
 |---|---|---|---|
-| 1.0, 1.1 | 1.0 | 1.0 | user_inject only |
-| 1.0, 1.1 | 1.0, 1.1 | 1.1 | user_inject + read-only commands (list_tabs, navigate, screenshot, extract, query, wait_for) |
+| 1.0, 1.1, 1.2 | 1.0 | 1.0 | user_inject only |
+| 1.0, 1.1, 1.2 | 1.0, 1.1 | 1.1 | user_inject + read-only commands (list_tabs, navigate, screenshot, extract, query, wait_for) |
+| 1.0, 1.1, 1.2 | 1.0, 1.1, 1.2 | 1.2 | + get_active_tab + write commands (click, type, submit, scroll); permission gating (Tier 0-3) enforced server-side |
 
 Negotiation: each side advertises a set of supported versions; the highest common version wins. If no overlap, the backend closes with code 4002 (`version_mismatch`) and the plugin shows a banner asking to update.
 
@@ -173,11 +174,80 @@ Params: same triple as `query`, plus:
 
 Returns `{ found, elapsed_ms, count }` on success, or `{ error: "WAIT_TIMEOUT" }` on timeout.
 
-### 4.5 Permission request (M3+, reserved)
+#### 4.4.7 Action: `get_active_tab` (1.2)
 
-Backend asks the plugin to display a confirmation UI when the dashboard is not the active surface.
+Params: `tab_id` (optional). Returns `{ tab_id, window_id, url, title, status }`. Used by backend permission policy to resolve the target domain before allowing T1/T2 actions.
 
-```json
+#### 4.4.8 Action: `click` (1.2, T2 write)
+
+Params: same triple as `query`. Plugin scrolls element into view and dispatches a native click on the FIRST match. Hard-blocks `<input type=password>` and `autocomplete~="cc-"` regardless of permission grant.
+
+Returns `{ matched_strategy, tag, text, aria_label }`. Errors: `ELEMENT_NOT_FOUND`, `PASSWORD_FIELD_BLOCKED`.
+
+#### 4.4.9 Action: `type` (1.2, T2 write)
+
+Params:
+
+| field | type | required | default |
+|---|---|---|---|
+| `value` | string | yes | — |
+| `selector` | string | one of two | — |
+| `aria_label` | string | one of two | — |
+| `clear_first` | bool | no | true |
+| `press_enter` | bool | no | false |
+| `tab_id` | int | no | active tab |
+
+Plugin focuses input, sets value, fires input + change events. Optionally fires Enter keydown afterwards. Same hard-block on password / cc fields.
+
+Returns `{ tag, typed_length, was_password }`. Errors: `ELEMENT_NOT_FOUND`, `PASSWORD_FIELD_BLOCKED`, `NOT_AN_INPUT`.
+
+#### 4.4.10 Action: `submit` (1.2, T2 write)
+
+Params: `selector` (optional, the form to submit; defaults to closest form of focused element). Calls `form.requestSubmit()` (HTML5) or `form.submit()`.
+
+Returns `{ form_action, form_method }`. Errors: `FORM_NOT_FOUND`.
+
+#### 4.4.11 Action: `scroll` (1.2, T1 navigation)
+
+Params (one of `direction` / `selector` required):
+
+| field | type | values |
+|---|---|---|
+| `direction` | string | `up` / `down` / `top` / `bottom` |
+| `selector` | string | scroll target into view |
+| `amount` | int (default 600) | px for up/down |
+
+Returns `{ direction, scroll_y }` or `{ selector, scroll_y }`.
+
+### 4.5 Permission gating (1.2)
+
+In 1.2, permission is enforced **server-side** in `core/browser_permissions.py`. Before sending T1/T2 commands to the plugin, backend asks the user via dashboard event (over `/api/ws`, separate from `/api/ws/browser`):
+
+```jsonc
+{ "type": "browser_permission_request",
+  "data": {
+    "request_id": "<uuid>",
+    "action": "click",
+    "domain": "github.com",
+    "tier": 2,
+    "task_id": "abc123",
+    "params_summary": { "selector": "button[aria-label='Save']" }
+  } }
+```
+
+User clicks one of `allow_once / allow_30min / trust_persist / deny` → dashboard POSTs:
+
+```
+POST /api/browser-bridge/permission/<request_id>
+{ "decision": "allow_30min" }
+```
+
+Decisions are persisted (when `trust_persist`) at `~/.config/kedo/browser_permissions.json` and audited at `~/.kedo/browser-audit.jsonl`.
+
+**Plugin-side permission_request** (for headless / dashboard-not-open scenarios) — reserved for 1.3.
+
+```jsonc
+// Reserved, not yet implemented:
 { "type": "permission_request", "id": "...", "action": "click", "domain": "example.com", "tier": 2 }
 { "type": "permission_response", "id": "...", "decision": "allow_once" | "allow_30min" | "deny" }
 ```

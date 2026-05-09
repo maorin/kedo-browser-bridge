@@ -16,6 +16,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     );
     return true;
   }
+  if (msg.type === 'click') {
+    sendResponse(performClick(msg.params || {}));
+    return true;
+  }
+  if (msg.type === 'type') {
+    sendResponse(performType(msg.params || {}));
+    return true;
+  }
+  if (msg.type === 'submit') {
+    sendResponse(performSubmit(msg.params || {}));
+    return true;
+  }
+  if (msg.type === 'scroll') {
+    sendResponse(performScroll(msg.params || {}));
+    return true;
+  }
   return false;
 });
 
@@ -141,4 +157,141 @@ async function performWaitFor(p: WaitParams) {
     await new Promise((r) => setTimeout(r, 200));
   }
   return { error: 'WAIT_TIMEOUT', error_code: 'WAIT_TIMEOUT' };
+}
+
+// ---------- M3 write handlers ----------
+
+interface ClickParams extends QueryParams {}
+
+function performClick(p: ClickParams) {
+  const found = findElements(p);
+  if (found.length === 0) {
+    return { error: 'ELEMENT_NOT_FOUND', error_code: 'ELEMENT_NOT_FOUND' };
+  }
+  const { el, matched } = found[0];
+  if (isPasswordField(el)) {
+    return { error: 'PASSWORD_FIELD_BLOCKED', error_code: 'PASSWORD_FIELD_BLOCKED' };
+  }
+  try {
+    (el as HTMLElement).scrollIntoView({ block: 'center', inline: 'center' });
+    (el as HTMLElement).click();
+    return {
+      matched_strategy: matched,
+      tag: el.tagName.toLowerCase(),
+      text: (el.textContent || '').trim().slice(0, 200),
+      aria_label: el.getAttribute('aria-label'),
+    };
+  } catch (err) {
+    return { error: String(err) };
+  }
+}
+
+interface TypeParams {
+  selector?: string;
+  aria_label?: string;
+  value: string;
+  clear_first?: boolean;
+  press_enter?: boolean;
+}
+
+function performType(p: TypeParams) {
+  const found = findElements({
+    selector: p.selector,
+    aria_label: p.aria_label,
+  });
+  if (found.length === 0) {
+    return { error: 'ELEMENT_NOT_FOUND', error_code: 'ELEMENT_NOT_FOUND' };
+  }
+  const { el } = found[0];
+  if (isPasswordField(el)) {
+    return { error: 'PASSWORD_FIELD_BLOCKED', error_code: 'PASSWORD_FIELD_BLOCKED' };
+  }
+  if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement) && !(el as HTMLElement).isContentEditable) {
+    return { error: 'NOT_AN_INPUT', error_code: 'NOT_AN_INPUT' };
+  }
+
+  const clearFirst = p.clear_first !== false;
+  const value = p.value;
+
+  try {
+    (el as HTMLElement).focus();
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      if (clearFirst) el.value = '';
+      el.value = clearFirst ? value : (el.value + value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } else {
+      // contenteditable
+      if (clearFirst) (el as HTMLElement).innerText = '';
+      (el as HTMLElement).innerText = clearFirst ? value : ((el as HTMLElement).innerText + value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    if (p.press_enter) {
+      const ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true });
+      el.dispatchEvent(ev);
+    }
+
+    return {
+      tag: el.tagName.toLowerCase(),
+      typed_length: value.length,
+      was_password: false,
+    };
+  } catch (err) {
+    return { error: String(err) };
+  }
+}
+
+interface SubmitParams {
+  selector?: string;
+}
+
+function performSubmit(p: SubmitParams) {
+  let form: HTMLFormElement | null = null;
+  if (p.selector) {
+    const el = document.querySelector(p.selector);
+    if (el instanceof HTMLFormElement) form = el;
+    else if (el) form = el.closest('form');
+  } else {
+    const focused = document.activeElement;
+    if (focused) form = focused.closest('form');
+  }
+  if (!form) {
+    return { error: 'FORM_NOT_FOUND', error_code: 'FORM_NOT_FOUND' };
+  }
+  try {
+    if (typeof form.requestSubmit === 'function') {
+      form.requestSubmit();
+    } else {
+      form.submit();
+    }
+    return { form_action: form.action, form_method: form.method };
+  } catch (err) {
+    return { error: String(err) };
+  }
+}
+
+interface ScrollParams {
+  direction?: 'up' | 'down' | 'top' | 'bottom';
+  selector?: string;
+  amount?: number;
+}
+
+function performScroll(p: ScrollParams) {
+  try {
+    if (p.selector) {
+      const el = document.querySelector(p.selector);
+      if (!el) return { error: 'ELEMENT_NOT_FOUND', error_code: 'ELEMENT_NOT_FOUND' };
+      el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+      return { selector: p.selector, scroll_y: window.scrollY };
+    }
+    const amount = p.amount || 600;
+    if (p.direction === 'up') window.scrollBy({ top: -amount, behavior: 'smooth' });
+    else if (p.direction === 'down') window.scrollBy({ top: amount, behavior: 'smooth' });
+    else if (p.direction === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
+    else if (p.direction === 'bottom') window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    return { direction: p.direction, scroll_y: window.scrollY };
+  } catch (err) {
+    return { error: String(err) };
+  }
 }
