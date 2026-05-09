@@ -22,7 +22,9 @@ function ensureAllowedUrl(url: string): void {
 }
 
 async function resolveTab(tab_id?: number): Promise<Tab> {
-  if (tab_id !== undefined && tab_id !== null) {
+  // LLMs sometimes pass `0` as "active tab default" instead of omitting the field.
+  // Defensively treat any non-positive value as "no tab_id given" → use active tab.
+  if (typeof tab_id === 'number' && tab_id > 0) {
     return chrome.tabs.get(tab_id);
   }
   const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
