@@ -7,7 +7,7 @@ import {
 const DEFAULT_WS_URL = 'ws://localhost:8000/api/ws/browser';
 const HEARTBEAT_PERIOD_MIN = 0.4; // ~24 s; keeps the SW alive
 const ALARM_NAME = 'kedo-heartbeat';
-const CLIENT_VERSION = '0.4.0';
+const CLIENT_VERSION = '0.4.1';
 
 interface Config {
   wsUrl: string;
@@ -101,6 +101,13 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
+      if (msg.type === 'cs_loaded') {
+        // M4: content_script load is the wake-up signal in headless agent profile.
+        // No response expected; just spin up the WS client.
+        await ensureClient();
+        sendResponse({ ok: true });
+        return;
+      }
       if (msg.type === 'get_status') {
         const cfg = await getConfig();
         sendResponse({ connected, configured: !!cfg, wsUrl: cfg?.wsUrl ?? DEFAULT_WS_URL });

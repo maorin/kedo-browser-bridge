@@ -1,5 +1,13 @@
 import { Readability } from '@mozilla/readability';
 
+// Wake the service worker on every page load. In headless agent profile,
+// MV3 SW often stays dormant until an event fires; sending any runtime
+// message wakes it (chrome restarts the SW to deliver the message). Once
+// awake the SW runs ensureClient() and connects WS as role=agent.
+try {
+  chrome.runtime.sendMessage({ type: 'cs_loaded', url: location.href }).catch(() => {});
+} catch {}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'extract_readable') {
     sendResponse(extractReadable());

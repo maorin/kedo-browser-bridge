@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "kedo Browser Bridge",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Send pages to kedo and let kedo agents drive your browser (M4: + isolated agent profile for research).",
   "permissions": ["tabs", "activeTab", "scripting", "storage", "alarms"],
   "host_permissions": ["<all_urls>"],
