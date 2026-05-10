@@ -7,22 +7,56 @@ import {
 const DEFAULT_WS_URL = 'ws://localhost:8000/api/ws/browser';
 const HEARTBEAT_PERIOD_MIN = 0.4; // ~24 s; keeps the SW alive
 const ALARM_NAME = 'kedo-heartbeat';
-const CLIENT_VERSION = '0.3.0';
+const CLIENT_VERSION = '0.4.0';
+
+interface Config {
+  wsUrl: string;
+  token: string;
+  roleHint: 'user' | 'agent';
+  source: 'agent_pack' | 'storage';
+}
 
 let client: WSClient | null = null;
 let connected = false;
 
-async function getConfig(): Promise<{ wsUrl: string; token: string } | null> {
+async function getConfig(): Promise<Config | null> {
+  // M4: when kedo launches an isolated chrome profile, it stages a writable copy
+  // of the extension dist and writes kedo-config.json into it. Try to read that
+  // first — if found, this SW is running inside the agent profile and should
+  // report role=agent.
+  try {
+    const cfgUrl = chrome.runtime.getURL('kedo-config.json');
+    const resp = await fetch(cfgUrl);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && typeof data.token === 'string' && data.token) {
+        return {
+          wsUrl: data.ws_url || DEFAULT_WS_URL,
+          token: data.token,
+          roleHint: data.role === 'agent' ? 'agent' : 'user',
+          source: 'agent_pack',
+        };
+      }
+    }
+  } catch {
+    /* config not present in this build → user profile, fall through */
+  }
+  // User profile path — read from chrome.storage.local (popup-saved config).
   const data = await chrome.storage.local.get(['wsUrl', 'token']);
   if (!data.token) return null;
-  return { wsUrl: data.wsUrl || DEFAULT_WS_URL, token: data.token };
+  return {
+    wsUrl: data.wsUrl || DEFAULT_WS_URL,
+    token: data.token,
+    roleHint: 'user',
+    source: 'storage',
+  };
 }
 
 async function ensureClient(): Promise<void> {
   const cfg = await getConfig();
   if (!cfg) return;
   if (!client) {
-    client = new WSClient(cfg.wsUrl, cfg.token, CLIENT_VERSION, (c) => {
+    client = new WSClient(cfg.wsUrl, cfg.token, CLIENT_VERSION, cfg.roleHint, (c) => {
       connected = c;
     });
     client.onMessage((msg) => {

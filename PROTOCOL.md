@@ -1,7 +1,7 @@
 # kedo Browser Bridge — Protocol
 
-**Protocol versions:** `1.0`, `1.1`, `1.2` (latest)
-**Status:** Draft. M1 (1.0) shipped. M2 (1.1, read-only browser control) shipped. M3 (1.2, write + permission gating) shipped.
+**Protocol versions:** `1.0`, `1.1`, `1.2`, `1.3` (latest)
+**Status:** Draft. M1 (1.0) shipped. M2 (1.1) shipped. M3 (1.2, write + permission gating) shipped. M4 (1.3, isolated agent profile + browser_research) shipped.
 
 This document is the contract between the kedo backend and any Browser Bridge client (Chrome MV3 extension by default; the same protocol can be implemented by other clients later).
 
@@ -15,9 +15,10 @@ This document is the contract between the kedo backend and any Browser Bridge cl
 
 | Backend supports | Plugin supports | Negotiated | Available actions |
 |---|---|---|---|
-| 1.0, 1.1, 1.2 | 1.0 | 1.0 | user_inject only |
-| 1.0, 1.1, 1.2 | 1.0, 1.1 | 1.1 | user_inject + read-only commands (list_tabs, navigate, screenshot, extract, query, wait_for) |
-| 1.0, 1.1, 1.2 | 1.0, 1.1, 1.2 | 1.2 | + get_active_tab + write commands (click, type, submit, scroll); permission gating (Tier 0-3) enforced server-side |
+| 1.0, 1.1, 1.2, 1.3 | 1.0 | 1.0 | user_inject only |
+| 1.0, 1.1, 1.2, 1.3 | 1.0, 1.1 | 1.1 | user_inject + read-only commands (list_tabs, navigate, screenshot, extract, query, wait_for) |
+| 1.0, 1.1, 1.2, 1.3 | 1.0, 1.1, 1.2 | 1.2 | + get_active_tab + write commands (click, type, submit, scroll); permission gating (Tier 0-3) enforced server-side |
+| 1.0, 1.1, 1.2, 1.3 | 1.0…1.3 | 1.3 | + isolated agent profile via `kedo-config.json` + dual token roles (user vs agent) + `browser_research` tool |
 
 Negotiation: each side advertises a set of supported versions; the highest common version wins. If no overlap, the backend closes with code 4002 (`version_mismatch`) and the plugin shows a banner asking to update.
 
@@ -28,9 +29,26 @@ Breaking changes bump the major (1.x → 2.0). Additive new actions / fields are
 Each session has a `role`:
 
 - `user` — the plugin runs in the user's normal browser. Default for users who install from the Chrome Web Store / Load unpacked.
-- `agent` — the plugin runs in a kedo-launched Chrome instance with an isolated `--user-data-dir`. The backend trusts this session for autonomous research only and applies stricter rules for writes.
+- `agent` — the plugin runs in a kedo-launched Chrome instance with an isolated `--user-data-dir`. The backend uses this session for autonomous research (e.g. `browser_research`) without polluting the user's login state.
 
-The plugin reports a `role_hint` on `hello`; the backend confirms the actual `role` on `hello_ack` (it may downgrade).
+### 3.1 Server-authoritative role assignment (1.3)
+
+Backend stores **two tokens** at `~/.config/kedo/`:
+- `browser_token` → maps to `role=user`
+- `browser_token_agent` → maps to `role=agent`
+
+When a plugin sends `hello`, the server picks the role **by which token was presented** — `role_hint` from the plugin is informational only. This prevents a compromised user-profile plugin from claiming `agent` role to bypass certain checks.
+
+### 3.2 How a plugin learns it's the agent profile
+
+When kedo launches the isolated chrome (via `core/browser_profile.IsolatedBrowserProfile`):
+1. kedo copies the extension dist to `~/.kedo/browser-extension-pack/` (writable)
+2. kedo writes `kedo-config.json` into that dir with `{"role": "agent", "token": "<agent_token>", "ws_url": "..."}`
+3. kedo patches `manifest.json` to add `kedo-config.json` to `web_accessible_resources`
+4. kedo spawns chrome: `chrome --user-data-dir=~/.kedo/browser-profile --load-extension=~/.kedo/browser-extension-pack`
+5. Plugin's service worker, on init, tries `fetch(chrome.runtime.getURL('kedo-config.json'))`. If found, uses its credentials + `role_hint='agent'`. If 404, falls back to `chrome.storage.local` (user popup config).
+
+The user's regular browser plugin never has this file → always reports `role_hint='user'`.
 
 ## 4. Messages
 

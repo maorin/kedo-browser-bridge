@@ -13,6 +13,7 @@ export class WSClient {
     private readonly url: string,
     private readonly token: string,
     private readonly clientVersion: string,
+    private readonly roleHint: 'user' | 'agent',
     private readonly onStatusChange: (connected: boolean) => void,
   ) {}
 
@@ -34,8 +35,8 @@ export class WSClient {
         type: 'hello',
         client: 'kedo-browser-bridge',
         client_version: this.clientVersion,
-        protocol_versions: ['1.0', '1.1', '1.2'],
-        role_hint: 'user',
+        protocol_versions: ['1.0', '1.1', '1.2', '1.3'],
+        role_hint: this.roleHint,
         token: this.token,
       });
       while (this.outgoing.length && this.ws?.readyState === WebSocket.OPEN) {
