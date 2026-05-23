@@ -57,6 +57,20 @@ export async function listTabs(): Promise<{ tabs: any[] }> {
   };
 }
 
+function isKedoDashboardUrl(url: string | undefined): boolean {
+  // Hard guard: never let an agent overwrite the kedo dashboard tab that the
+  // user is watching for task progress / replies, no matter what the LLM
+  // passes in (new_tab=false, tab_id=<dashboard>, etc).
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    const isLocalhost = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+    return isLocalhost && u.port === '8000' && u.pathname.startsWith('/dashboard');
+  } catch {
+    return false;
+  }
+}
+
 export async function navigate(params: {
   url: string;
   tab_id?: number;
@@ -66,11 +80,37 @@ export async function navigate(params: {
   if (!params?.url) throw aerr('BAD_PARAMS', 'url required');
   ensureAllowedUrl(params.url);
 
+  // Resolve which tab the caller intends to overwrite, so we can guard the
+  // kedo dashboard against accidental clobbering.
+  let candidateTabId: number | null = null;
+  if (!params.new_tab) {
+    if (params.tab_id !== undefined && params.tab_id !== null) {
+      candidateTabId = params.tab_id;
+    } else {
+      const active = await resolveTab();
+      candidateTabId = active.id!;
+    }
+  }
+  if (candidateTabId !== null) {
+    try {
+      const existing = await chrome.tabs.get(candidateTabId);
+      if (isKedoDashboardUrl(existing.url)) {
+        // Caller wanted to replace the dashboard tab — refuse, open in a new
+        // background tab instead so the user keeps seeing the dashboard.
+        candidateTabId = null;
+        params = { ...params, new_tab: true };
+      }
+    } catch {
+      // tab disappeared; fall through to the normal branches and let chrome
+      // surface the error.
+    }
+  }
+
   let tab: Tab;
   if (params.new_tab) {
-    tab = await chrome.tabs.create({ url: params.url, active: true });
-  } else if (params.tab_id !== undefined && params.tab_id !== null) {
-    tab = await chrome.tabs.update(params.tab_id, { url: params.url });
+    tab = await chrome.tabs.create({ url: params.url, active: false });
+  } else if (candidateTabId !== null) {
+    tab = await chrome.tabs.update(candidateTabId, { url: params.url });
   } else {
     const active = await resolveTab();
     tab = await chrome.tabs.update(active.id!, { url: params.url });

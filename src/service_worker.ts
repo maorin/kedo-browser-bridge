@@ -129,7 +129,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ ok: false, error: result.error });
           return;
         }
-        client?.send({ type: 'user_inject', payload: result.payload });
+        await ensureClient();
+        if (!client || !connected) {
+          sendResponse({ ok: false, error: 'not connected to kedo backend' });
+          return;
+        }
+        client.send({ type: 'user_inject', payload: result.payload });
         sendResponse({ ok: true });
         return;
       }
